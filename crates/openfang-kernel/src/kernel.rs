@@ -546,14 +546,20 @@ impl OpenFangKernel {
                 .map_err(|e| KernelError::BootFailed(format!("Memory init failed: {e}")))?,
         );
 
-        // Create LLM driver
+        // Create LLM driver.
+        // For the API key, try: 1) explicit api_key_env from config, 2) provider_api_keys
+        // mapping, 3) auth profiles, 4) convention {PROVIDER}_API_KEY. This ensures
+        // custom providers (e.g. nvidia, azure) work without hardcoded env var names.
+        let default_api_key = if !config.default_model.api_key_env.is_empty() {
+            std::env::var(&config.default_model.api_key_env).ok()
+        } else {
+            // api_key_env not set — resolve using provider_api_keys / convention
+            let env_var = config.resolve_api_key_env(&config.default_model.provider);
+            std::env::var(&env_var).ok()
+        };
         let driver_config = DriverConfig {
             provider: config.default_model.provider.clone(),
-            api_key: if config.default_model.api_key_env.is_empty() {
-                None
-            } else {
-                std::env::var(&config.default_model.api_key_env).ok()
-            },
+            api_key: default_api_key,
             base_url: config
                 .default_model
                 .base_url
@@ -609,13 +615,16 @@ impl OpenFangKernel {
             model_chain.push((d.clone(), String::new()));
         }
         for fb in &config.fallback_providers {
+            let fb_api_key = if !fb.api_key_env.is_empty() {
+                std::env::var(&fb.api_key_env).ok()
+            } else {
+                // Resolve using provider_api_keys / convention for custom providers
+                let env_var = config.resolve_api_key_env(&fb.provider);
+                std::env::var(&env_var).ok()
+            };
             let fb_config = DriverConfig {
                 provider: fb.provider.clone(),
-                api_key: if fb.api_key_env.is_empty() {
-                    None
-                } else {
-                    std::env::var(&fb.api_key_env).ok()
-                },
+                api_key: fb_api_key,
                 base_url: fb
                     .base_url
                     .clone()
@@ -812,7 +821,8 @@ impl OpenFangKernel {
                 } else {
                     configured_model.as_str()
                 };
-                match create_embedding_driver("openai", model, "OPENAI_API_KEY", None) {
+                let openai_url = config.provider_urls.get("openai").map(|s| s.as_str());
+                match create_embedding_driver("openai", model, "OPENAI_API_KEY", openai_url) {
                     Ok(d) => {
                         info!("Embedding driver auto-detected: OpenAI");
                         Some(Arc::from(d))
@@ -3020,6 +3030,7 @@ impl OpenFangKernel {
 
         // If an agent with this hand's name already exists, remove it first
         let existing = self.registry.list().into_iter().find(|e| e.name == def.agent.name);
+        let old_agent_id = existing.as_ref().map(|e| e.id);
         if let Some(old) = existing {
             info!(agent = %old.name, id = %old.id, "Removing existing hand agent for reactivation");
             let _ = self.kill_agent(old.id);
@@ -3027,6 +3038,18 @@ impl OpenFangKernel {
 
         // Spawn the agent
         let agent_id = self.spawn_agent(manifest)?;
+
+        // Migrate cron jobs from old agent to new agent so they survive restarts.
+        // Without this, persisted cron jobs would reference the stale old UUID
+        // and fail silently (issue #461).
+        if let Some(old_id) = old_agent_id {
+            let migrated = self.cron_scheduler.reassign_agent_jobs(old_id, agent_id);
+            if migrated > 0 {
+                if let Err(e) = self.cron_scheduler.persist() {
+                    warn!("Failed to persist cron jobs after agent migration: {e}");
+                }
+            }
+        }
 
         // Link agent to instance
         self.hand_registry
@@ -3944,18 +3967,11 @@ impl OpenFangKernel {
                 // Same provider — use default key
                 std::env::var(&self.config.default_model.api_key_env).ok()
             } else {
-                // Different provider — check auth profiles first, then let
-                // create_driver() look up the correct env var automatically.
-                if let Some(profiles) = self.config.auth_profiles.get(agent_provider.as_str()) {
-                    let mut sorted: Vec<_> = profiles.iter().collect();
-                    sorted.sort_by_key(|p| p.priority);
-                    sorted
-                        .first()
-                        .and_then(|best| std::env::var(&best.api_key_env).ok())
-                } else {
-                    // Pass None — create_driver() has per-provider env var lookups
-                    None
-                }
+                // Different provider — check auth profiles, provider_api_keys,
+                // and convention-based env var. For custom providers (not in the
+                // hardcoded list), this is the primary path for API key resolution.
+                let env_var = self.config.resolve_api_key_env(agent_provider);
+                std::env::var(&env_var).ok()
             };
 
             // Don't inherit default provider's base_url when switching providers
@@ -3989,12 +4005,16 @@ impl OpenFangKernel {
             let mut chain: Vec<(std::sync::Arc<dyn openfang_runtime::llm_driver::LlmDriver>, String)> =
                 vec![(primary.clone(), String::new())];
             for fb in &manifest.fallback_models {
+                let fb_api_key = if let Some(env) = &fb.api_key_env {
+                    std::env::var(env).ok()
+                } else {
+                    // Resolve using provider_api_keys / convention for custom providers
+                    let env_var = self.config.resolve_api_key_env(&fb.provider);
+                    std::env::var(&env_var).ok()
+                };
                 let config = DriverConfig {
                     provider: fb.provider.clone(),
-                    api_key: fb
-                        .api_key_env
-                        .as_ref()
-                        .and_then(|env| std::env::var(env).ok()),
+                    api_key: fb_api_key,
                     base_url: fb
                         .base_url
                         .clone()

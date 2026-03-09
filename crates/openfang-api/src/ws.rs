@@ -809,12 +809,19 @@ async fn handle_command(
             } else {
                 match state.kernel.set_agent_model(agent_id, args) {
                     Ok(()) => {
-                        let msg = if let Some(entry) = state.kernel.registry.get(agent_id) {
-                            format!("Model switched to: {} (provider: {})", entry.manifest.model.model, entry.manifest.model.provider)
+                        if let Some(entry) = state.kernel.registry.get(agent_id) {
+                            let model = &entry.manifest.model.model;
+                            let provider = &entry.manifest.model.provider;
+                            serde_json::json!({
+                                "type": "command_result",
+                                "command": cmd,
+                                "message": format!("Model switched to: {model} (provider: {provider})"),
+                                "model": model,
+                                "provider": provider
+                            })
                         } else {
-                            format!("Model switched to: {args}")
-                        };
-                        serde_json::json!({"type": "command_result", "command": cmd, "message": msg})
+                            serde_json::json!({"type": "command_result", "command": cmd, "message": format!("Model switched to: {args}")})
+                        }
                     }
                     Err(e) => {
                         serde_json::json!({"type": "error", "content": format!("Model switch failed: {e}")})

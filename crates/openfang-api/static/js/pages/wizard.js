@@ -469,7 +469,7 @@ function wizardPage() {
         gemini: 'gemini-2.5-flash',
         groq: 'llama-3.3-70b-versatile',
         deepseek: 'deepseek-chat',
-        openrouter: 'openrouter/auto',
+        openrouter: 'openrouter/google/gemini-2.5-flash',
         mistral: 'mistral-large-latest',
         together: 'meta-llama/Llama-3-70b-chat-hf',
         fireworks: 'accounts/fireworks/models/llama-v3p1-70b-instruct',

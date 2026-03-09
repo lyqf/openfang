@@ -1340,7 +1340,7 @@ fn provider_list() -> Vec<(&'static str, &'static str, &'static str, &'static st
         (
             "openrouter",
             "OPENROUTER_API_KEY",
-            "openrouter/anthropic/claude-sonnet-4",
+            "openrouter/google/gemini-2.5-flash",
             "OpenRouter",
         ),
     ]

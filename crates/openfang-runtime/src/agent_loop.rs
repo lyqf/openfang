@@ -54,8 +54,7 @@ const MAX_HISTORY_MESSAGES: usize = 20;
 /// Strip a provider prefix from a model ID before sending to the API.
 ///
 /// Many models are stored as `provider/org/model` (e.g. `openrouter/google/gemini-2.5-flash`)
-/// but the upstream API expects just `org/model`. This also handles special routers
-/// like `openrouter/auto` → `auto`.
+/// but the upstream API expects just `org/model` (e.g. `google/gemini-2.5-flash`).
 pub fn strip_provider_prefix(model: &str, provider: &str) -> String {
     let slash_prefix = format!("{}/", provider);
     let colon_prefix = format!("{}:", provider);

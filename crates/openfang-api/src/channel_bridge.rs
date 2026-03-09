@@ -648,7 +648,16 @@ impl ChannelBridgeHandle for KernelBridgeAdapter {
         self.kernel
             .set_agent_model(agent_id, model)
             .map_err(|e| format!("{e}"))?;
-        Ok(format!("Model switched to: {model}"))
+        // Read back resolved model+provider from registry
+        let entry = self
+            .kernel
+            .registry
+            .get(agent_id)
+            .ok_or_else(|| "Agent not found after model switch".to_string())?;
+        Ok(format!(
+            "Model switched to: {} (provider: {})",
+            entry.manifest.model.model, entry.manifest.model.provider
+        ))
     }
 
     async fn stop_run(&self, agent_id: AgentId) -> Result<String, String> {

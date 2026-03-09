@@ -72,7 +72,7 @@ const PROVIDERS: &[ProviderInfo] = &[
         name: "openrouter",
         display: "OpenRouter",
         env_var: "OPENROUTER_API_KEY",
-        default_model: "openrouter/anthropic/claude-sonnet-4",
+        default_model: "openrouter/google/gemini-2.5-flash",
         needs_key: true,
         hint: "",
     },

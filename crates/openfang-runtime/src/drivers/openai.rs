@@ -275,10 +275,19 @@ impl LlmDriver for OpenAIDriver {
                             _ => {}
                         }
                     }
+                    let has_tool_calls = !tool_calls.is_empty();
                     oai_messages.push(OaiMessage {
                         role: "assistant".to_string(),
+                        // ZHIPU (GLM) rejects assistant messages where content is
+                        // null or omitted when tool_calls are present (error 1214).
+                        // Always send an empty string so every OpenAI-compat
+                        // provider gets a valid payload.
                         content: if text_parts.is_empty() {
-                            None
+                            if has_tool_calls {
+                                Some(OaiMessageContent::Text(String::new()))
+                            } else {
+                                None
+                            }
                         } else {
                             Some(OaiMessageContent::Text(text_parts.join("")))
                         },
@@ -615,10 +624,15 @@ impl LlmDriver for OpenAIDriver {
                             _ => {}
                         }
                     }
+                    let has_tool_calls = !tool_calls_out.is_empty();
                     oai_messages.push(OaiMessage {
                         role: "assistant".to_string(),
                         content: if text_parts.is_empty() {
-                            None
+                            if has_tool_calls {
+                                Some(OaiMessageContent::Text(String::new()))
+                            } else {
+                                None
+                            }
                         } else {
                             Some(OaiMessageContent::Text(text_parts.join("")))
                         },
